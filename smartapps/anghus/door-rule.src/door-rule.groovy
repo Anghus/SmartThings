@@ -206,7 +206,7 @@ def initialize() {
 def lockEvent(evt)	{
 	if(evt.isStateChange) {
         def customMsg = (evt.value == "locked") ? lockMessage : unlockMessage
-        def defaultMsg = "The ${getApp().label.toLowerCase()} was ${evt.value}."
+        def defaultMsg = "The ${getApp().label.toLowerCase()} was $evt.value."
 
         state.whenUnlocked = now()
         notify(notifyOnDoorEvents && evt.value in doorEvents, useCustomDoorMessages, customMsg, defaultMsg)
@@ -245,7 +245,7 @@ def evaluateLock() {
 	def motionActive = false
     motionSensors.each {
         motionActive |= it.currentValue("motion") == "active"
-        //debug("Motion ${it.currentValue("motion") == "active" ? "is" : "is not"} detected on ${it.label}")
+        //debug("Motion ${it.currentValue("motion") == "active" ? "is" : "is not"} detected on $it.label")
     }
 
 	debug("${getApp().label} is ${doorLocked ? "locked" : "unlocked"}, ${doorClosed ? "closed" : "open"}, and ${motionActive ? "active" : "inactive"}")
@@ -255,7 +255,7 @@ def evaluateLock() {
 		// Schedule the door lock if it's closed, unlocked, and no motion detected.
 
 		runIn((lockDelay ?: 15)*60, lockDoor, [overwrite: true])
-        debug("Scheduling the ${getApp().label.toLowerCase()} to lock in ${lockDelay} minutes")
+        debug("Scheduling the ${getApp().label.toLowerCase()} to lock in $lockDelay minutes")
         state.lockScheduled = true
     }
     else {
@@ -281,7 +281,7 @@ def lockDoor() {
 def knockEvent(evt) {
 	if(evt.isStateChange) {
         runIn(knockDelay ?: 5, evaluateKnock, [overwrite: true])
-        debug("Scheduling knock handler for ${getApp().label.toLowerCase()} to run in ${knockDelay} seconds");
+        debug("Scheduling knock handler for ${getApp().label.toLowerCase()} to run in $knockDelay seconds");
     }
 }
 
@@ -340,10 +340,10 @@ def turnOnLights() {
     	if(!lightModes || (lightModes && location.mode in lightModes)) {
             lights.each { it.on() }
             runIn(lightTimeout*60, turnOffLights, [overwrite: true])
-            debug("Turning on ${lights} for ${lightTimeout} minutes")
+            debug("Turning on $lights for $lightTimeout minutes")
         }
         else
-        	debug("${location.mode} is not in ${lightModes}")
+        	debug("$location.mode} is not in $lightModes")
     }
     state.lightsScheduled = true
 }
@@ -352,7 +352,7 @@ def turnOffLights() {
 	if(state.lightsScheduled) {
     	lights.each { it.off() }
         state.lightsScheduled = false
-        debug("Turning off ${lights} after ${lightTimeout} minutes")
+        debug("Turning off $lights after $lightTimeout minutes")
     }
 }
 
