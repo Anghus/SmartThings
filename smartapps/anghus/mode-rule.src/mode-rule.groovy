@@ -44,31 +44,43 @@ preferences {
 
 def schedulePage() {
 	dynamicPage(name: "schedulePage", nextPage: "presencePage", uninstall: true) {
-    	section("START") {
-    		input name: "startType", type: "enum", title: "Value type", options: ["Specific", "Sunrise", "Sunset"], submitOnChange: true, required: true
+    	section("START TIME") {
+    		input name: "startType", type: "enum", title: "Time", options: ["Custom", "Sunrise", "Sunset"], submitOnChange: true, required: true
 			switch(startType) {
-            	case "Specific":
-                	input name: "startTime", type: "time", title: "Specific time", required: true
+            	case "Custom":
+                	input name: "startTime", type: "time", title: "Custom time", required: true
                 	break;
 				case "Sunrise":
                 case "Sunset":
-                	input name: "startOffset", type: "number", title: "Offset (+/- minutes)", range: "-60..60", defaultValue: 0, required: true
+					def sun = getSunriseAndSunset(zipCode: location.zipCode)
+                    if(startType == "Sunrise")
+						paragraph "Sunrise is ${sun.sunrise.format('hh:mm a', location.timeZone)} today."
+					else
+						paragraph "Sunset is ${sun.sunset.format('hh:mm a', location.timeZone)} today."
+                	input name: "startOffset", type: "number", title: "Offset (+/- minutes)", range: "-60..60", defaultValue: 0, required: true                    
                     break;
             }
         }
-    	section("FINISH") {
-    		input name: "finishType", type: "enum", title: "Value type", options: ["Specific", "Sunrise", "Sunset"], submitOnChange: true, required: true
+    	section("FINISH TIME") {
+    		input name: "finishType", type: "enum", title: "Time", options: ["Custom", "Sunrise", "Sunset"], submitOnChange: true, required: true
 			switch(finishType) {
-            	case "Specific":
-                	input name: "finishTime", type: "time", title: "Specific time", required: true
+            	case "Custom":
+                	input name: "finishTime", type: "time", title: "Custom time", required: true
                 	break;
 				case "Sunrise":
                 case "Sunset":
+					def sun = getSunriseAndSunset(zipCode: location.zipCode)
+                    if(finishType == "Sunrise")
+						paragraph "Sunrise is ${sun.sunrise.format('hh:mm a', location.timeZone)} today."
+					else
+						paragraph "Sunset is ${sun.sunset.format('hh:mm a', location.timeZone)} today."
                 	input name: "finishOffset", type: "number", title: "Offset (+/- minutes)", range: "-60..60", defaultValue: 0, required: true
                     break;
             }
         }
-
+    	section() {
+			paragraph "This rule will be evaluated only between the start and finish times. Both are required."
+		}
     }
 }
 
@@ -76,13 +88,18 @@ def presencePage() {
 	dynamicPage(name: "presencePage", nextPage: motionPage, uninstall: true) {
     	section("PRESENCE") {
 			input name: "presenceSensors", type: "capability.presenceSensor", title: "People", multiple: true, submitOnChange: true, required: false
+        	paragraph "Optionally, add presence sensors to the rule and define how they will affect its evaluation."
         }
 		if(presenceSensors) {
             section("RULE") {
-                    input name: "presenceScope", type: "enum", title: "Scope", options: ["Any", "All"], defaultValue: "Any", required: true
-                    input name: "presenceComparison", type: "enum", title: "Comparison", options: ["Are", "Are not"], defaultValue: "Are", required: true
-                    input name: "presenceValue", type: "enum", title: "Presence", options: ["Present", "Not present"], defaultValue: "Present", required: true
+                input name: "presenceScope", type: "enum", title: "Scope", options: ["Any", "All"], defaultValue: "Any", required: true
+                input name: "presenceComparison", type: "enum", title: "Comparison", options: ["Are", "Are not"], defaultValue: "Are", required: true
+                input name: "presenceValue", type: "enum", title: "Presence", options: ["Present", "Not present"], defaultValue: "Present", required: true
 			}
+            section("DELAY") {
+				input name: "presenceDelay", type: "number", title: "Delay (minutes)", defaultValue: 0, required: true
+                paragraph "Evaluate presence sensors after the specified time, canceling the rule if conditions change."
+            }
         }
 	}
 }
@@ -91,12 +108,17 @@ def motionPage() {
 	dynamicPage(name: "motionPage", nextPage: "actionsPage", uninstall: true) {
     	section("MOTION") {
 			input name: "motionSensors", type: "capability.motionSensor", title: "Motion sensors", multiple: true, submitOnChange: true, required: false
+        	paragraph "Optionally, add motion sensors to the rule and define how they will affect its evaluation."
         }
         if(motionSensors) {
         	section("RULE") {
                 input name: "motionScope", type: "enum", title: "Scope", options: ["Any", "All"], defaultValue: "Any", required: true
                 input name: "motionComparison", type: "enum", title: "Comparison", options: ["Are", "Are not"], defaultValue: "Are", required: true
                 input name: "motionValue", type: "enum", title: "Motion", options: ["Active", "Inactive"], defaultValue: "Active", required: true
+            }
+            section("DELAY") {
+				input name: "motionDelay", type: "number", title: "Delay (minutes)", defaultValue: 0, required: true
+                paragraph "Evaluate motion sensors after the specified time, canceling the rule if conditions change."
             }
         }
 	}
@@ -105,7 +127,7 @@ def motionPage() {
 def actionsPage() {
 	dynamicPage(name: "actionsPage", nextPage: "notifyPage", uninstall: true) {
     	section("ACTIONS") {
-        	input name: "targetMode", type: "mode", title: "Change mode to", required: false
+        	input name: "targetMode", type: "mode", title: "Change mode to", required: true
             def actions = location.helloHome?.getPhrases()*.label
             if(actions) {
             	actions.sort()
@@ -113,7 +135,21 @@ def actionsPage() {
 			}
         }
     	section("MODES") {
-        	input name: "modes", type: "mode", title: "Only in these modes", multiple: true, required: false
+        	input name: "restrictModes", type: "bool", title: "Limit to certain modes?", defaultvalue: false, submitOnChange: true, required: false
+            if(restrictModes)
+        		input name: "modeList", type: "mode", title: "Choose modes", multiple: true, required: true
+				paragraph "Limiting these actions to certain modes is useful to control the order in which modes change (e.g., only setting the mode to Sleep if the current mode is Home Night)."
+        }
+        section("MESSAGES") {
+            input name: "notifyOnRun", type: "bool", title: "Notify on run?", defaultValue: false, submitOnChange: true, required: true
+            if(notifyOnRun) {
+                input name: "actionsList", type: "enum", title: "Which actions?", options: ["mode", "routine"], defaultValue: ["mode", "routine"], multiple: true, required: true
+                input name: "useCustomMessages", type: "bool", title: "Custom messages?", defaultValue: false, submitOnChange: true, required: true
+                if (useCustomMessages) {
+                    input name: "modeMessage", type: "text", title: "Mode message", defaultValue: "Changing mode.", required: true
+                    input name: "routineMessage", type: "text", title: "Routine message", defaultValue: "Executing routine.", required: true
+                }
+            }
         }
     }
 }
@@ -146,54 +182,63 @@ def installPage() {
 /**/
 
 def installed() {
+	trace("installed()")
 	initialize()
 }
 
 def updated() {
-	unsubscribe()
+	trace("updated()")
     unschedule()
+	unsubscribe()
 	initialize()
 }
 
 def initialize() {
+	trace("initialize()")
 	setupSchedule()
 	if(presenceSensors) subscribe(presenceSensors, "presence", presenceEvent)
-	if(motionSensors) subscribe(motionSensors, "motion.active", motionEvent)
+	if(motionSensors) subscribe(motionSensors, "motion", motionEvent)
 }
 
 def setupSchedule() {
+	trace("setupSchedule()")
 
-	// Setup hard schedules if specified.
+	// Setup custom schedules, if specified.
 
-	if(startType == "Specific")  {
+	if(startType == "Custom")  {
     	schedule(startTime, startCallback);
         state.startTime = startTime
+        debug("Scheduling the custom start time $state.startTime")
 	}
 
-	if(finishType == "Specific") {
+	if(finishType == "Custom") {
     	schedule(finishTime, finishCallback);
         state.finishTime = finishTime
+        debug("Scheduling the custom finish time $state.finishTime")
     }
 
-	// Subscribe to sunrise and sunset events.
+	// Schedule astronomical events daily, and
+    // go ahead and pick up any missed events.
 
-	subscribe(location, "position", sunSetRiseEvent)
-    subscribe(location, "sunriseTime", sunSetRiseEvent)
-    subscribe(location, "sunsetTime", sunSetRiseEvent)
-
-    astroCheck() // Go ahead and schedule missed events.
+    schedule("0 0 0 1/1 * ? *", astroCheck)
+	astroCheck()
 }
 
 /**/
 
-def startCallback()  { evaluateMode() }
-def finishCallback() { evaluateMode() }
+def startCallback()  {
+	trace("startCallback()")
+    evaluateRule()
+}
 
-def sunSetRiseEvent(evt) {
-	astroCheck()
+def finishCallback() {
+	trace("finishCallback()")
+    evaluateRule()
 }
 
 def astroCheck() {
+	trace("astroCheck()")
+
     def now = new Date()
 	def sun = getSunriseAndSunset(zipCode: location.zipCode)
     def sunrise = sun.sunrise
@@ -204,69 +249,226 @@ def astroCheck() {
 	if(sunrise.before(now)) sunrise = sunrise.next()
 	if(sunset.before(now)) sunset = sunset.next()
 
-	debug("Sunrise is ${sunrise.format('yyyy-M-d hh:mm:ss a', location.timeZone)}")
-    debug("Sunset is ${sunset.format('yyyy-M-d hh:mm:ss a', location.timeZone)}")
-
-	// Schedule the starting event for the schedule.
+	// Schedule the starting astro event for the schedule, if any.
 
 	if(startType == "Sunrise") {
-    	runOnce(new Date(sunrise.time + (startOffset * 60000)), evaluateMode, [overwrite: false])
-        state.startTime = sunrise
+    	def timeWithOffset = new Date(sunrise.time + (startOffset * 60000))
+    	runOnce(timeWithOffset, evaluateRule, [overwrite: false])
+        state.startTime = timeWithOffset.format("yyyy-MM-dd'T'HH:mm:ss.SSSZ", location.timeZone)
+        debug("Scheduling a sunrise start time at $state.startTime")
     }
     else
     	if(startType == "Sunset") {
-        	runOnce(new Date(sunset.time + (startOffset * 60000)), evaluateMode, [overwrite: false])
-            state.startTime = sunset
+            def timeWithOffset = new Date(sunset.time + (startOffset * 60000))
+            runOnce(timeWithOffset, evaluateRule, [overwrite: false])
+            state.startTime = timeWithOffset.format("yyyy-MM-dd'T'HH:mm:ss.SSSZ", location.timeZone)
+            debug("Scheduling a sunset start time at $state.startTime")
         }
 
-	// Schedule the finishing event for the schedule.
+	// Schedule the finishing astro event for the schedule, if any.
 
 	if(finishType == "Sunrise") {
-    	runOnce(new Date(sunrise.time + (finishOffset * 60000)), evaluateMode, [overwrite: false])
-        state.finishTime = sunrise
+    	def timeWithOffset = new Date(sunrise.time + (finishOffset * 60000))
+    	runOnce(timeWithOffset, evaluateRule, [overwrite: false])
+        state.finishTime = timeWithOffset.format("yyyy-MM-dd'T'HH:mm:ss.SSSZ", location.timeZone)
+        debug("Scheduling a sunrise finish time at $state.finishTime")
     }
     else
     	if(finishType == "Sunset") {
-        	runOnce(new Date(sunset.time + (finishOffset * 60000)), evaluateMode, [overwrite: false])
-            state.finishTime = sunset
+            def timeWithOffset = new Date(sunset.time + (finishOffset * 60000))
+            runOnce(timeWithOffset, evaluateRule, [overwrite: false])
+            state.finishTime = timeWithOffset.format("yyyy-MM-dd'T'HH:mm:ss.SSSZ", location.timeZone)
+            debug("Scheduling a sunset finish time at $state.finishTime")
         }
+}
+
+def evaluateSchedule() {
+	def now = new Date().format("yyyy-MM-dd'T'HH:mm:ss.SSSZ", location.timeZone)
+	return timeOfDayIsBetween(state.startTime, state.finishTime, now, location.timeZone)
 }
 
 /**/
 
 def presenceEvent(evt) {
-	if(evt.isStateChange)
-		evaluateMode()
+	trace("presenceEvent($evt.value})")
+
+	if(evt.isStateChange && evaluateSchedule()) {
+
+		// Don't bother if we're not in the rule's schedule.
+
+    	if(evaluatePresence()) {
+            debug("Presence evaluation runs in $presenceDelay minutes")
+			runIn(presenceDelay * 60, handlePresence, [overwrite: true])
+            state.presenceScheduled = true
+		}
+        else
+        {
+        	if(presenceScheduled) {
+                debug("Presence evaluation unscheduled")
+                unschedule(handlePresence)
+                state.presenceScheduled = false
+            }
+		}
+    }
 }
 
-def motionEvent(evt) {
-	if(evt.isStateChange)
-		evaluateMode()
+def handlePresence() {
+	trace("handlePresence()")
+	state.presenceScheduled = false
+    evaluateRule()
+}
+
+def evaluatePresence() {
+	trace("evaluatePresence()")
+
+	def result = true
+	if(presenceSensors) {
+        def all = true
+        def any = false
+
+        presenceSensors.each {
+
+            // Any matching value will change $any to true.
+			// Any non-matching value will change $all to false.
+
+            any |= (it.currentValue("presence") == presenceValue.toLowerCase())
+            all &= (it.currentValue("presence") == presenceValue.toLowerCase())
+        }
+
+		// Based on the defined rule, pick the results we need.
+
+        if(presenceScope == "All")
+            result = (presenceComparison == "Are") ? all : !all
+        else
+            result = (presenceComparison == "Are") ? any : !any
+
+		debug("Presence rule '${presenceScope.toLowerCase()} ${presenceComparison.toLowerCase()} ${presenceValue.toLowerCase()}' is $result")
+	}
+
+	return result
 }
 
 /**/
 
-def evaluateMode() {
-	now = new Date()
+def motionEvent(evt) {
+	trace("motionEvent($evt.value})")
 
-	debug("Current time is $now.format('yyyy-M-d hh:mm:ss a', location.timeZone)")
-    debug("Schedule starts at $state.startTime.format('yyyy-M-d hh:mm:ss a', location.timeZone)")
-    debug("Schedule finishes at $state.finishTime.format('yyyy-M-d hh:mm:ss a', location.timeZone)")
+	if(evt.isStateChange && evaluateSchedule()) {
 
-	if(timeOfDayIsBetween(startTime, finishTime, now, location.timeZone)) {
-        if(targetMode && targetMode != location.mode) {
-            if(location.modes?.find{it.name == targetMode}) {
-                setLocationMode(targetMode)
-                notify(true, "", "Setting mode to $targetMode.")
+		// Don't bother if we're not in the rule's schedule.
+
+    	if(evaluateMotion()) {
+            debug("Motion evaluation runs $motionDelay minutes")
+			runIn(motionDelay * 60, handleMotion, [overwrite: true])
+            state.motionScheduled = true
+		}
+        else
+        {
+        	if(state.motionScheduled) {
+                debug("Motion evaluation unscheduled")
+                unschedule(handleMotion)
+                state.motionScheduled = false
+            }
+		}
+    }
+}
+
+def handleMotion() {
+	trace("handleMotion()")
+	state.motionScheduled = false
+    evaluateRule()
+}
+
+def evaluateMotion() {
+	trace("evaluateMotion()")
+
+	def result = true
+	if(motionSensors) {
+        def all = true
+        def any = false
+
+        motionSensors.each {
+
+            // Any matching value will change $any to true.
+			// Any non-matching value will change $all to false.
+
+            any |= (it.currentValue("motion") == motionValue.toLowerCase())
+            all &= (it.currentValue("motion") == motionValue.toLowerCase())
+        }
+
+		// Based on the defined rule, pick the results we need.
+
+        if(motionScope == "All")
+            result = (motionComparison == "Are") ? all : !all
+        else
+            result = (motionComparison == "Are") ? any : !any
+
+		debug("Motion rule '${motionScope.toLowerCase()} ${motionComparison.toLowerCase()} ${motionValue.toLowerCase()}' is $result")
+	}
+
+	return result
+}
+
+/**/
+
+def evaluateRule() {
+	trace("evaluateRule()")
+
+	def now = new Date().format("yyyy-MM-dd'T'HH:mm:ss.SSSZ", location.timeZone)
+
+	if(evaluateSchedule()) {
+    	if(evaluatePresence()) {
+            if(evaluateMotion()) {
+                if(!restrictModes || location.mode in modeList) {
+
+                    // The current time is within our schedule.
+                    // Modes aren't restricted or we're in a chosen mode.
+                    // Therefore, run the actions this rule defines.
+
+                    if(targetMode) changeMode()
+                    if(targetRoutines) execRoutines()
+                }
+                else
+                    debug("Mode $location.mode is not in $modeList")
             }
             else
-                debug("The mode '$targetMode' is not defined")
-        }
+                debug("The motion rule prevented execution")
+		}
         else
-        	debug("The current mode is already '$targetMode'")
+        	debug("The presence rule prevented execution")
     }
     else
-    	debug("The current time is not within the rule's schedule")
+    	debug("Time is not between start and finish")
+}
+
+def changeMode() {
+	trace("changeMode()")
+
+    if(targetMode && targetMode != location.mode) {
+        if(location.modes?.find{it.name == targetMode}) {
+
+            // Our target mode is valid and not already set,
+            // so change the mode and notify the user.
+
+            setLocationMode(targetMode)
+            if("mode" in actionsList)
+            	notify(notifyOnRun, useCustomMessages, modeMessage, "Setting mode to $targetMode.")                
+        }
+        else
+            debug("Mode '$targetMode' is not defined")
+    }
+    else
+        debug("Mode is already '$targetMode'")
+}
+
+def execRoutines() {
+	trace("execRoutines()")
+
+    targetRoutines.each {
+        location.helloHome?.execute(it)
+        if("routine" in actionsList)
+			notify(notifyOnRun, useCustomMessages, routineMessage, "Executing the routine $it.label.")                
+    }
 }
 
 /**/
@@ -283,4 +485,9 @@ private notify(enabled, useCustom, customText, defaultText) {
 private debug(message) {
 	if(debug)
     	log.debug(message)
+}
+
+private trace(function) {
+	if(debug)
+    	log.trace(function)
 }

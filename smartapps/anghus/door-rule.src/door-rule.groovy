@@ -168,15 +168,19 @@ def installPage() {
 /**/
 
 def installed() {
+	trace("installed()")
 	initialize()
 }
 
 def updated() {
+	trace("updated()")
 	unsubscribe()
 	initialize()
 }
 
 def initialize() {
+	trace("initialize()")
+
     state.lastLock = 0
 	state.lastContact = 0
     state.lastMotion = 0
@@ -189,7 +193,7 @@ def initialize() {
     
 	if(doorLock) subscribe(doorLock, "lock", lockEvent)
 	if(contactSensor) subscribe(contactSensor, "contact", contactEvent)
-    if(motionSensors) subscribe(motionSensors, "motion.active", motionEvent)
+    if(motionSensors) subscribe(motionSensors, "motion", motionEvent)
 
 	// Knock events:
     
@@ -204,6 +208,8 @@ def initialize() {
 /**/
 
 def lockEvent(evt)	{
+	trace("lockEvent($evt.value)")
+
 	if(evt.isStateChange) {
         def customMsg = (evt.value == "locked") ? lockMessage : unlockMessage
         def defaultMsg = "The ${getApp().label.toLowerCase()} was $evt.value."
@@ -219,6 +225,8 @@ def lockEvent(evt)	{
 }
 
 def motionEvent(evt) {
+	trace("motionEvent($evt.value)")
+
 	if(evt.isStateChange) {
         evaluateLock()
         state.lastMotion = now()
@@ -226,6 +234,8 @@ def motionEvent(evt) {
 }
 
 def contactEvent(evt) {
+	trace("contactEvent($evt.value)")
+
 	if(evt.isStateChange) {
         def customMsg = (evt.value == "open") ? openMessage : closeMessage
         def defaultMsg = "The ${getApp().label.toLowerCase()} was ${(evt.value == "open") ? "opened" : evt.value}."
@@ -240,6 +250,8 @@ def contactEvent(evt) {
 }
 
 def evaluateLock() {
+	trace("evaluateLock()")
+
 	def doorLocked = (doorLock == null) ? true : doorLock.currentValue("lock") == "locked"
     def doorClosed = (contactSensor == null) ? true : contactSensor.currentValue("contact") == "closed"
 	def motionActive = false
@@ -272,6 +284,8 @@ def evaluateLock() {
 }
 
 def lockDoor() {
+	trace("lockDoor()")
+
 	doorLock.lock()
 	debug("Locking the ${getApp().label.toLowerCase()} after ${Math.round((now() - state.whenUnlocked)/60000)} minutes")
 }
@@ -279,6 +293,8 @@ def lockDoor() {
 /**/
 
 def knockEvent(evt) {
+	trace("knockEvent($evt.value)")
+
 	if(evt.isStateChange) {
         runIn(knockDelay ?: 5, evaluateKnock, [overwrite: true])
         debug("Scheduling knock handler for ${getApp().label.toLowerCase()} to run in $knockDelay seconds");
@@ -286,6 +302,8 @@ def knockEvent(evt) {
 }
 
 def outsideEvent(evt) {
+	trace("outsideEvent($evt.value)")
+
 	if(evt.isStateChange) {
         if(!limitLightEvents || (limitLightEvents && "motion" in lightEvents))
             turnOnLights()
@@ -294,6 +312,8 @@ def outsideEvent(evt) {
 }
 
 def evaluateKnock() {
+	trace("evaluateKnock()")
+
 	def defaultMsg = "Someone is knocking at the ${getApp().label.toLowerCase()}."
 
 	// Check whether sensor events are more recent than 60 seconds ago.
@@ -325,6 +345,8 @@ def evaluateKnock() {
 /**/
 
 def doorbellEvent(evt) {
+	trace("doorbellEvent($evt.value)")
+
 	if(evt.isStateChange) {
         def defaultMsg = "Someone is ringing the ${getApp().label.toLowerCase()} doorbell."
         notify(notifyDoorbell, useCustomDoorbellMessage, doorbellMessage, defaultMsg)
@@ -336,6 +358,8 @@ def doorbellEvent(evt) {
 /**/
 
 def turnOnLights() {
+	trace("turnOnLights()")
+
 	if(controlLights) {
     	if(!lightModes || (lightModes && location.mode in lightModes)) {
             lights.each { it.on() }
@@ -349,6 +373,8 @@ def turnOnLights() {
 }
 
 def turnOffLights() {
+	trace("turnOffLights()")
+
 	if(state.lightsScheduled) {
     	lights.each { it.off() }
         state.lightsScheduled = false
@@ -370,4 +396,9 @@ private notify(enabled, useCustom, customText, defaultText) {
 private debug(message) {
 	if(debug)
     	log.debug(message)
+}
+
+private trace(function) {
+	if(debug)
+    	log.trace(function)
 }
