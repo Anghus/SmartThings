@@ -23,7 +23,7 @@ definition(
     name: "Mode Rule",
     namespace: "Anghus",
     author: "Jerry Honeycutt",
-    description: "Change modes automatically based upon presence devices, motion sensors, and the time of day.",
+    description: "Change modes based upon presence devices, motion sensors, and time of day.",
     category: "My Apps",
 
     parent: "Anghus:Home Rules",
@@ -37,6 +37,7 @@ preferences {
 	page(name: "schedulePage")
     page(name: "presencePage")
 	page(name: "motionPage")
+	page(name: "switchPage")
     page(name: "actionsPage")
 	page(name: "notifyPage")
 	page(name: "installPage")
@@ -105,7 +106,7 @@ def presencePage() {
 }
 
 def motionPage() {
-	dynamicPage(name: "motionPage", nextPage: "actionsPage", uninstall: true) {
+	dynamicPage(name: "motionPage", nextPage: "switchPage", uninstall: true) {
     	section("MOTION") {
 			input name: "motionSensors", type: "capability.motionSensor", title: "Motion sensors", multiple: true, submitOnChange: true, required: false
         	paragraph "Optionally, add motion sensors to the rule and define how they will affect its evaluation."
@@ -119,6 +120,26 @@ def motionPage() {
             section("DELAY") {
 				input name: "motionDelay", type: "number", title: "Delay (minutes)", defaultValue: 0, required: true
                 paragraph "Evaluate motion sensors after the specified time, canceling the rule if conditions change."
+            }
+        }
+	}
+}
+
+def switchPage() {
+	dynamicPage(name: "switchPage", nextPage: "actionsPage", uninstall: true) {
+    	section("SWITCHES") {
+			input name: "switches", type: "capability.switch", title: "Switches", multiple: true, submitOnChange: true, required: false
+        	paragraph "Optionally, add switches to the rule and define how they will affect its evaluation."
+        }
+        if(switches) {
+        	section("RULE") {
+                input name: "switchScope", type: "enum", title: "Scope", options: ["Any", "All"], defaultValue: "Any", required: true
+                input name: "switchComparison", type: "enum", title: "Comparison", options: ["Are", "Are not"], defaultValue: "Are", required: true
+                input name: "switchValue", type: "enum", title: "Motion", options: ["On", "Off"], defaultValue: "Active", required: true
+            }
+            section("DELAY") {
+				input name: "switchDelay", type: "number", title: "Delay (minutes)", defaultValue: 0, required: true
+                paragraph "Evaluate switches after the specified time, canceling the rule if conditions change."
             }
         }
 	}
@@ -198,6 +219,7 @@ def initialize() {
 	setupSchedule()
 	if(presenceSensors) subscribe(presenceSensors, "presence", presenceEvent)
 	if(motionSensors) subscribe(motionSensors, "motion", motionEvent)
+	if(switches) subscribe(switches, "switch", switchEvent)
 }
 
 def setupSchedule() {
@@ -212,7 +234,6 @@ def setupSchedule() {
 	}
 
 	if(finishType == "Custom") {
-    	schedule(finishTime, finishCallback);
         state.finishTime = finishTime
         debug("Scheduling the custom finish time $state.finishTime")
     }
@@ -269,14 +290,12 @@ def astroCheck() {
 
 	if(finishType == "Sunrise") {
     	def timeWithOffset = new Date(sunrise.time + (finishOffset * 60000))
-    	runOnce(timeWithOffset, evaluateRule, [overwrite: false])
         state.finishTime = timeWithOffset.format("yyyy-MM-dd'T'HH:mm:ss.SSSZ", location.timeZone)
         debug("Scheduling a sunrise finish time at $state.finishTime")
     }
     else
     	if(finishType == "Sunset") {
             def timeWithOffset = new Date(sunset.time + (finishOffset * 60000))
-            runOnce(timeWithOffset, evaluateRule, [overwrite: false])
             state.finishTime = timeWithOffset.format("yyyy-MM-dd'T'HH:mm:ss.SSSZ", location.timeZone)
             debug("Scheduling a sunset finish time at $state.finishTime")
         }
@@ -358,7 +377,7 @@ def motionEvent(evt) {
 		// Don't bother if we're not in the rule's schedule.
 
     	if(evaluateMotion()) {
-            debug("Motion evaluation runs $motionDelay minutes")
+            debug("Motion evaluation runs in $motionDelay minutes")
 			runIn(motionDelay * 60, handleMotion, [overwrite: true])
             state.motionScheduled = true
 		}
@@ -404,6 +423,67 @@ def evaluateMotion() {
             result = (motionComparison == "Are") ? any : !any
 
 		debug("Motion rule '${motionScope.toLowerCase()} ${motionComparison.toLowerCase()} ${motionValue.toLowerCase()}' is $result")
+	}
+
+	return result
+}
+
+/**/
+
+def switchEvent(evt) {
+	trace("switchEvent($evt.value})")
+
+	if(evt.isStateChange && evaluateSchedule()) {
+
+		// Don't bother if we're not in the rule's schedule.
+
+    	if(evaluateSwitch()) {
+            debug("Switch evaluation runs in $switchDelay minutes")
+			runIn(switchDelay * 60, handleSwitch, [overwrite: true])
+            state.switchScheduled = true
+		}
+        else
+        {
+        	if(state.switchScheduled) {
+                debug("Switch evaluation unscheduled")
+                unschedule(handleSwitch)
+                state.switchScheduled = false
+            }
+		}
+    }
+}
+
+def handleSwitch() {
+	trace("handleSwitch()")
+	state.switchScheduled = false
+    evaluateRule()
+}
+
+def evaluateSwitch() {
+	trace("evaluateSwitch()")
+
+	def result = true
+	if(switches) {
+        def all = true
+        def any = false
+
+        switches.each {
+
+            // Any matching value will change $any to true.
+			// Any non-matching value will change $all to false.
+
+            any |= (it.currentValue("switch") == switchValue.toLowerCase())
+            all &= (it.currentValue("switch") == switchValue.toLowerCase())
+        }
+
+		// Based on the defined rule, pick the results we need.
+
+        if(switchScope == "All")
+            result = (switchComparison == "Are") ? all : !all
+        else
+            result = (switchComparison == "Are") ? any : !any
+
+		debug("Switch rule '${switchScope.toLowerCase()} ${switchComparison.toLowerCase()} ${switchValue.toLowerCase()}' is $result")
 	}
 
 	return result
