@@ -35,6 +35,7 @@ definition(
 
 preferences {
 	page(name: "doorPage")
+	page(name: "presencePage")
     page(name: "knockPage")
     page(name: "doorbellPage")
     page(name: "lightsPage")
@@ -43,7 +44,7 @@ preferences {
 }
 
 def doorPage() {
-	dynamicPage(name: "doorPage", nextPage: "knockPage", uninstall: true) {
+	dynamicPage(name: "doorPage", nextPage: "presencePage", uninstall: true) {
     	section("DOOR") {
 			input name: "contactSensor", type: "capability.contactSensor", title: "Contact", submitOnChange: true, required: false
             if(contactSensor) {
@@ -63,7 +64,7 @@ def doorPage() {
         section("MESSAGES") {
             input name: "notifyOnDoorEvents", type: "bool", title: "Notify on change?", defaultValue: false, submitOnChange: true, required: true
             if(notifyOnDoorEvents) {
-                input name: "doorEvents", type: "enum", title: "Which events?", options: ["open", "closed", "locked", "unlocked"], multiple: true, required: true
+                input name: "doorEvents", type: "enum", title: "Which events?", options: ["open", "closed", "locked", "unlocked"], defaultValue: ["open", "closed", "locked", "unlocked"], multiple: true, required: true
                 input name: "useCustomDoorMessages", type: "bool", title: "Custom messages?", defaultValue: false, submitOnChange: true, required: true
                 if (useCustomDoorMessages) {
                     input name: "openMessage", type: "text", title: "Open message", defaultValue: "The door is open.", required: true
@@ -74,6 +75,24 @@ def doorPage() {
             }
         }
 	}
+}
+
+def presencePage() {
+	dynamicPage(name: "presencePage", nextPage: "knockPage", uninstall: true) {
+		section("LEAVING") {
+            input name: "people", type: "capability.presenceSensor", title: "People", multiple: true, submitOnChange: true, required: false
+            paragraph "Unlock door when everyone specified leaves."
+        }
+        if(people) {
+            section("ARRIVAL") {
+                input name: "arriveUnlocksDoor", type: "bool", title: "Unlock door when someone arrives?", defaultValue: false, submitOnChange: true, required: true
+                if(arriveUnlocksDoor) {
+                    input name: "presenceDelay", type: "number", title: "Minimum time away (minutes)", defaultValue: 10, required: true
+                	paragraph "When someone returns after the specified delay, the door unlocks. The delay prevents false alarms caused by a wandering GPS."
+                }
+            }
+        }
+    }
 }
 
 def knockPage() {
@@ -121,20 +140,19 @@ def doorbellPage() {
 def lightsPage() {
 	dynamicPage(name: "lightsPage", nextPage: "notifyPage", uninstall: true) {
 		section("LIGHTS") {
-	        input name: "controlLights", type: "bool", title: "Control lights?", defaultValue: false, submitOnChange: true, required: true
-            if(controlLights) {
-                input name: "lights", type: "capability.switch", title: "Light switches", multiple: true, required: true
-                input name: "lightTimeout", type: "number", title: "Turn off after (minutes)", defaultValue: 5, required: true
-            }
-        	paragraph "Knocking the door or ringing the doorbell turns on the specified lights for the time specified."
+            input name: "lights", type: "capability.switch", title: "Light switches", multiple: true, submitOnChange: true, required: false
+            if(lights)
+            	input name: "lightTimeout", type: "number", title: "Turn off after (minutes)", defaultValue: 5, required: true
+        	paragraph "Turn on lights when the door changes state."
         }
-        if(controlLights) {
+        if(lights) {
             section("EVENTS") {
                 input name: "limitLightEvents", type: "bool", title: "Choose events?", defaultValue: false, submitOnChange: true, required: true
                 if(limitLightEvents) {
-                    input name: "lightEvents", type: "enum", title: "Which events?", options: ["open", "closed", "locked", "unlocked", "doorbell", "knock", "motion"], multiple: true, required: true
+                    input name: "lightEvents", type: "enum", title: "Which events?", options: ["open", "closed", "locked", "unlocked", "doorbell", "knock", "motion"], defaultValue: ["open", "unlocked", "doorbell", "knock", "motion"], multiple: true, required: true
                     input name: "lightModes", type: "mode", title: "During which modes?", multiple: true, required: true
                 }
+            	paragraph "Optionally, choose events that turn on lights."
             }
         }
     }
@@ -188,12 +206,14 @@ def initialize() {
 	state.lockScheduled = false
     state.lightsScheduled = false
     state.whenUnlocked = 0
+	state.lastLeave = 0
 
 	// Lock events:
     
 	if(doorLock) subscribe(doorLock, "lock", lockEvent)
 	if(contactSensor) subscribe(contactSensor, "contact", contactEvent)
     if(motionSensors) subscribe(motionSensors, "motion", motionEvent)
+	if(presenceEvent) subscribe(people, "presence", presenceEvent)
 
 	// Knock events:
     
@@ -249,6 +269,37 @@ def contactEvent(evt) {
     }
 }
 
+def presenceEvent(evt) {
+	trace("presenceEvent($evt.value)")
+
+    if(true) {
+    	if(evt.value == "present" && arriveUnlocksDoor) {
+
+			// Someone came home. If timed out, unlock the door.
+
+			if((now() - state.lastLeave) > presenceDelay * 60000) {
+            	unlockDoor()
+                debug("Unlocking the ${getApp().label.toLowerCase()} after someone has arrived")
+			}
+        }
+        else {
+
+			// If everyone is away, lock the door.
+
+        	def allGone = true
+        	people.each {
+            	// Any present person changes AllGone from True to False.
+            	allGone &= !(it.currentValue("presence") == "present")
+            }
+            if(allGone) {
+            	lockDoor()
+                debug("Locking the ${getApp().label.toLowerCase()} after everyone has left")
+			}
+        	state.lastLeave = now()
+        }
+    }
+}
+
 def evaluateLock() {
 	trace("evaluateLock()")
 
@@ -289,6 +340,12 @@ def lockDoor() {
 	doorLock.lock()
 	debug("Locking the ${getApp().label.toLowerCase()} after ${Math.round((now() - state.whenUnlocked)/60000)} minutes")
 }
+
+def unlockDoor() {
+	trace("unlockDoor()")
+	doorLock.unlock()
+}
+
 
 /**/
 
@@ -360,26 +417,36 @@ def doorbellEvent(evt) {
 def turnOnLights() {
 	trace("turnOnLights()")
 
-	if(controlLights) {
+	if(lights) {
     	if(!lightModes || (lightModes && location.mode in lightModes)) {
-            lights.each { it.on() }
-            runIn(lightTimeout*60, turnOffLights, [overwrite: true])
-            debug("Turning on $lights for $lightTimeout minutes")
+        	def scheduleLag = 0
+            lights.each {
+            	if(it.currentValue("switch") == "off") {
+
+					// If the light is off, turn it on and schedule it to turn off.
+                    // Lag each schedule by 5 seconds to ensure separate schedules.
+                    // If the light is already on, don't mess with it. Don't want to
+                    // turn off any lights that were manually turned on.
+
+                    it.on()
+					runIn(lightTimeout*60+scheduleLag, turnOffLight, [overwrite: false, data: [id: it.id]])
+            		debug("Turning on $it.label for $lightTimeout minutes")
+                    scheduleLag += 5
+                }
+                else
+            		debug("Skipping light $it.label; it's already on")
+			}
         }
         else
         	debug("$location.mode} is not in $lightModes")
     }
-    state.lightsScheduled = true
 }
 
-def turnOffLights() {
-	trace("turnOffLights()")
+def turnOffLight(data) {
+	trace("turnOffLight($data.id)")
 
-	if(state.lightsScheduled) {
-    	lights.each { it.off() }
-        state.lightsScheduled = false
-        debug("Turning off $lights after $lightTimeout minutes")
-    }
+	def light = lights.find{ it.id == data.id }; light.off()
+    debug("Turning off $light.label after $lightTimeout minutes")
 }
 
 /**/

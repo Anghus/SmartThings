@@ -135,7 +135,7 @@ def switchPage() {
         	section("RULE") {
                 input name: "switchScope", type: "enum", title: "Scope", options: ["Any", "All"], defaultValue: "Any", required: true
                 input name: "switchComparison", type: "enum", title: "Comparison", options: ["Are", "Are not"], defaultValue: "Are", required: true
-                input name: "switchValue", type: "enum", title: "Motion", options: ["On", "Off"], defaultValue: "Active", required: true
+                input name: "switchValue", type: "enum", title: "Switch", options: ["On", "Off"], defaultValue: "Off", required: true
             }
             section("DELAY") {
 				input name: "switchDelay", type: "number", title: "Delay (minutes)", defaultValue: 0, required: true
@@ -152,7 +152,7 @@ def actionsPage() {
             def actions = location.helloHome?.getPhrases()*.label
             if(actions) {
             	actions.sort()
-            	input name: "targetRoutine", type: "enum", title: "Run these routines", options: actions, multiple: true, required: false
+            	input name: "targetRoutines", type: "enum", title: "Run these routines", options: actions, multiple: true, required: false
 			}
         }
     	section("MODES") {
@@ -499,17 +499,21 @@ def evaluateRule() {
 	if(evaluateSchedule()) {
     	if(evaluatePresence()) {
             if(evaluateMotion()) {
-                if(!restrictModes || location.mode in modeList) {
+            	if(evaluateSwitch()) {
+                    if(!restrictModes || location.mode in modeList) {
 
-                    // The current time is within our schedule.
-                    // Modes aren't restricted or we're in a chosen mode.
-                    // Therefore, run the actions this rule defines.
+                        // The current time is within our schedule.
+                        // Modes aren't restricted or we're in a chosen mode.
+                        // Therefore, run the actions this rule defines.
 
-                    if(targetMode) changeMode()
-                    if(targetRoutines) execRoutines()
-                }
+                        if(targetMode) changeMode()
+                        if(targetRoutines) execRoutines()
+                    }
+                    else
+                        debug("Mode $location.mode is not in $modeList")
+				}
                 else
-                    debug("Mode $location.mode is not in $modeList")
+                	debug("The switch rule prevented execution")
             }
             else
                 debug("The motion rule prevented execution")
