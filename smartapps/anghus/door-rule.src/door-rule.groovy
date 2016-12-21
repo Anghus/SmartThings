@@ -81,7 +81,7 @@ def presencePage() {
 	dynamicPage(name: "presencePage", nextPage: "knockPage", uninstall: true) {
 		section("LEAVING") {
             input name: "people", type: "capability.presenceSensor", title: "People", multiple: true, submitOnChange: true, required: false
-            paragraph "Unlock door when everyone specified leaves."
+            paragraph "Lock door when everyone specified leaves."
         }
         if(people) {
             section("ARRIVAL") {

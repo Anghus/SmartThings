@@ -43,7 +43,6 @@ def devicePage() {
 	dynamicPage(name: "devicePage", nextPage: "triggerPage", uninstall: true) {
         section("TARGET") {
             input name: "targetDevice", type: "capability.polling", title: "Device to poll", submitOnChange: true, required: true
-            paragraph "Choose the device to poll."
         }
 	}
 }

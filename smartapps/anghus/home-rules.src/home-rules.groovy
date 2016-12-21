@@ -37,7 +37,7 @@ preferences {
 	page(name: "mainPage", title: "HOME RULES", install: true, uninstall: true, submitOnChange: true) {
         section {
             href "doorPage", title: "Door Rules", description: "Manage aspects of a door, including locks, knock sensors, contact sensors, and doorbells."
-            href "modePage", title: "Mode Rules", description: "Change modes based upon presence devices, motion sensors, and time of day."
+            href "modePage", title: "Mode Rules", description: "Change modes and run actions based upon presence devices, motion sensors, and time of day."
             href "pollPage", title: "Poll Rules", description: "Poll devices based upon a timer or motion sensor state changes."
         }
     }

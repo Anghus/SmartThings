@@ -39,6 +39,7 @@ preferences {
 	page(name: "motionPage")
 	page(name: "switchPage")
     page(name: "actionsPage")
+    page(name: "extrasPage")
 	page(name: "notifyPage")
 	page(name: "installPage")
 }
@@ -154,6 +155,7 @@ def actionsPage() {
             	actions.sort()
             	input name: "targetRoutines", type: "enum", title: "Run these routines", options: actions, multiple: true, required: false
 			}
+            href page: "extrasPage", title: "Extra actions", description: "Configure lights, locks, and thermostats."
         }
     	section("MODES") {
         	input name: "restrictModes", type: "bool", title: "Limit to certain modes?", defaultvalue: false, submitOnChange: true, required: false
@@ -170,6 +172,27 @@ def actionsPage() {
                     input name: "modeMessage", type: "text", title: "Mode message", defaultValue: "Changing mode.", required: true
                     input name: "routineMessage", type: "text", title: "Routine message", defaultValue: "Executing routine.", required: true
                 }
+            }
+        }
+    }
+}
+
+def extrasPage() {
+	dynamicPage(name: "extrasPage", uninstall: false) {
+        section("LIGHTS") {
+        	input name: "lightsOn", type: "capability.switch", title: "Turn on these lights", multiple: true, required: false
+            input name: "lightsOff", type: "capability.switch", title: "Turn off these lights", multiple: true, required: false
+        }
+        section("LOCKS") {
+        	input name: "doorsToLock", type: "capability.lock", title: "Lock these doors", multiple: true, required: false
+            input name: "doorsToUnlock", type: "capability.lock", title: "Unlock these doors", multiple: true, required: false
+        }
+        section("THERMOSTAT") {
+        	input name: "thermostats", type: "capability.thermostat", title: "Set these thermostats", multiple: true, submitOnChange: true, required: false
+            if(thermostats) {
+            	input name: "thermostatMode", type: "enum", title: "Mode?", options: ["auto", "cool", "heat", "off"], required: false
+            	input name: "heatingTemp", type: "number", title: "When heating", range: "60..80", required: false
+            	input name: "coolingTemp", type: "number", title: "When cooling", range: "65..85", required: false
             }
         }
     }
@@ -508,6 +531,7 @@ def evaluateRule() {
 
                         if(targetMode) changeMode()
                         if(targetRoutines) execRoutines()
+                        execExtraActions()
                     }
                     else
                         debug("Mode $location.mode is not in $modeList")
@@ -552,6 +576,22 @@ def execRoutines() {
         location.helloHome?.execute(it)
         if("routine" in actionsList)
 			notify(notifyOnRun, useCustomMessages, routineMessage, "Executing the routine $it.label.")                
+    }
+}
+
+def execExtraActions() {
+	trace("execExtraActions()")
+
+	if(lightsOn)      { debug("Turning on $lightsOn");     lightsOn.each { it.on() }}
+	if(lightsOff)     { debug("Turning off $lightsOff");   lightsOff.each { it.off() }}
+	if(doorsToLock)   { debug("Locking $doorsToLock");     doorsToLock.each { it.lock() }}
+    if(doorsToUnlock) { debug("Unlocking $doorsToUnlock"); doorsToUnlock.each { it.unlock() }}
+    
+    thermostats.each {
+    	debug("Setting $it.label")
+    	if(thermostatMode) { it.setThermostatMode(thermostatMode); debug("Mode is $thermostatMode") }
+        if(heatingTemp)    { it.setHeatingSetpoint(heatingTemp);   debug("Heating temp is $heatingTemp") }
+        if(coolingTemp)    { it.setCoolingSetpoint(coolingTemp);   debug("Cooling temp is $coolingTemp") }
     }
 }
 
