@@ -46,15 +46,16 @@ def lightsPage() {
             if(lights) {
             	input name: "actionType", type: "enum", title: "Type of action?", options: actionTypes(), submitOnChange: true, required: true
                 switch(actionType) {
-            		case "Switch":
-                    	input name: "action", type: "enum", title: "Turn on or off?", options: ["Turn on", "Turn off"], defaultValue: "Turn on", required: true
+            		case actionTypes()[0]:
+                    	input name: "action", type: "enum", title: "Turn on or off?", options: switchActions(), defaultValue: switchActions()[0], required: true
                         break;
                 }
             }
         }
 	}
 }
-def actionTypes() { ["Switch"] }
+def actionTypes() 	{ ["Switch"] }
+def switchActions() { ["Turn on", "Turn off"] }
 
 def triggerPage() {
 	dynamicPage(name: "triggerPage", nextPage: "installPage", uninstall: true) {
@@ -62,12 +63,12 @@ def triggerPage() {
             input name: "triggerType", type: "enum", title: "Type of trigger?", options: triggerTypes(), submitOnChange: true, required: true
 		}
         switch(triggerType) {
-            case "Motion":
+            case triggerTypes()[0]:
                 section("MOTION") {
                     input name: "motionSensors", type: "capability.motionSensor", title: "Motion sensors", multiple: true, submitOnChange: true, required: true
                     if(motionSensors) {
-                        input name: "motionScope", type: "enum", title: "How many?", options: triggerScope(), defaultValue: "Any", required: true
-                        input name: "motionDir", type: "enum", title: "When motion", options: motionTriggers(), defaultValue: "Starts", required: true
+                        input name: "motionScope", type: "enum", title: "How many?", options: triggerScope(), defaultValue: triggerScope()[0], required: true
+                        input name: "motionDir", type: "enum", title: "When motion", options: motionTriggers(), defaultValue: motionTriggers()[0], required: true
                     }
                 }
 				if(motionSensors) {
@@ -79,12 +80,12 @@ def triggerPage() {
                 }
 				break;
 
-            case "Switch":
+            case triggerTypes()[1]:
                 section("SWITCH") {
                     input name: "switches", type: "capability.switch", title: "Switches", multiple: true, submitOnChange: true, required: true
                     if(switches) {
-                        input name: "switchScope", type: "enum", title: "How many?", options: triggerScope(), defaultValue: "Any", required: true
-                        input name: "switchState", type: "enum", title: "When switches", options: switchTriggers(), defaultValue: "Turn on", required: true
+                        input name: "switchScope", type: "enum", title: "How many?", options: triggerScope(), defaultValue: triggerScope()[0], required: true
+                        input name: "switchState", type: "enum", title: "When switches", options: switchTriggers(), defaultValue: switchTriggers()[0], required: true
                     }
                 }
 				if(switches) {
@@ -146,7 +147,7 @@ def initialize() {
 def motionEvent(evt) {
 	trace("motionEvent($evt.value)")
 
-	if((triggerType == "Motion") && inMode() && evt.isStateChange) {
+	if((triggerType == triggerTypes()[0]) && inMode() && evt.isStateChange) {
         if(motionRule()) {
             debug("Evaluating $motionSensors")
             debug("Motion needs to ${translate(motionDir)}")
@@ -181,7 +182,7 @@ def motionRule() {
             any |= (it.currentValue("motion") == value)
             all &= (it.currentValue("motion") == value)
         }
-		result = (motionScope == "All") ? all : any
+		result = (motionScope == triggerScope()[1]) ? all : any
 	}
 	debug("Rule '${motionScope.toLowerCase()} are $value' is $result")
 	return result
@@ -192,7 +193,7 @@ def motionRule() {
 def switchEvent(evt) {
 	trace("switchEvent($evt.value)")
 
-	if((triggerType == "Switch") && inMode() && evt.isStateChange) {
+	if((triggerType == triggerTypes()[1]) && inMode() && evt.isStateChange) {
         if(switchRule()) {
             debug("Evaluating $switches")
             debug("Switch needs to be ${translate(switchState)}")
@@ -227,7 +228,7 @@ def switchRule() {
             any |= (it.currentValue("switch") == value)
             all &= (it.currentValue("switch") == value)
         }
-		result = (switchScope == "All") ? all : any
+		result = (switchScope == triggerScope()[1]) ? all : any
 	}
 	debug("Rule '${switchScope.toLowerCase()} are $value' is $result")
 	return result
@@ -242,8 +243,8 @@ def doLight(data) {
 	lights.each {
     	debug("$it.label is ${it.currentValue('switch')}")
     	switch(actionType) {
-        	case "Switch":
-            	if(action == "Turn on") {
+        	case triggerTypes()[1]:
+            	if(action == switchTriggers()[0]) {
 					// Don't touch the light if it's already on.
                 	if(it.currentValue("switch") != "on") {
                     	debug("Turning ON $it.label")
@@ -254,7 +255,7 @@ def doLight(data) {
                     	it.off()
 					}
 				}
-                else if(action == "Turn off") {
+                else if(action == switchTriggers()[1]) {
                 	// Don't touch the light if it's already off.
                 	if(it.currentValue("switch") != "off") {
                     	debug("Turning OFF $it.label")
@@ -275,10 +276,10 @@ def doLight(data) {
 private translate(state) {
 	def value = ""
     switch(state) {
-    	case "Turn on"	: value = "on"; 		break
-        case "Turn off"	: value = "off"; 		break;
-        case "Starts"	: value = "active"; 	break;
-        case "Stops"	: value = "inactivce"; 	break;
+    	case switchTriggers()[0]	: value = "on"; 		break
+        case switchTriggers()[1]	: value = "off"; 		break;
+        case motionTriggers()[0]	: value = "active"; 	break;
+        case motionTriggers()[1]	: value = "inactivce"; 	break;
     }
     return value
 }
