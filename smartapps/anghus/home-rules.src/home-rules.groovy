@@ -36,9 +36,15 @@ definition(
 preferences {
 	page(name: "mainPage", title: "HOME RULES", install: true, uninstall: true, submitOnChange: true) {
         section {
+            href "litePage", title: "Lite Rules", description: "Manage lights by using motion sensors and other devices' events."
             href "doorPage", title: "Door Rules", description: "Manage aspects of a door, including locks, knock sensors, contact sensors, and doorbells."
             href "modePage", title: "Mode Rules", description: "Change modes and run actions based upon presence devices, motion sensors, and time of day."
             href "pollPage", title: "Poll Rules", description: "Poll devices based upon a timer or motion sensor state changes."
+        }
+    }
+    page(name: "litePage", title: "LITE RULES", install: true, uninstall: false, submitOnChange: true) {
+        section {
+            app(name: "liteRule", appName: "Lite Rule", namespace: "Anghus", title: "Create New Lite Rule", multiple: true)
         }
     }
     page(name: "doorPage", title: "DOOR RULES", install: true, uninstall: false, submitOnChange: true) {
