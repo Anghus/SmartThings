@@ -147,20 +147,19 @@ def initialize() {
 def motionEvent(evt) {
 	trace("motionEvent($evt.value)")
 
-	if((triggerType == triggerTypes()[0]) && inMode() && evt.isStateChange) {
-        if(motionRule()) {
-            debug("Evaluating $motionSensors")
-            debug("Motion needs to ${translate(motionDir)}")
-            debug("Motion is currently $evt.value")
-            debug("Running $lights")
-
-            doLight()
+	if(evt.isStateChange && inMode() && (triggerType == triggerTypes()[0])) {
+        debug("Evaluating $motionSensors")
+        def ruleEval = motionRule()
+        if(ruleEval) {
+            debug("Running $motionSensors")
+            goForward()
+			unschedule(goBackward)
         }
         else
-            if(motionToggle) {
-            	debug("Toggling after $motionTimeout minutes")
-	            runIn(motionTimeout*60, doLight, [overwrite: true, data: [toggle: true]])
-        	}
+            if(!ruleEval && motionToggle) {
+				debug("Toggling after $motionTimeout minutes")
+                runIn(motionTimeout*60, goBackward, [overwrite: true])
+			}
     }
 }
 
@@ -193,19 +192,18 @@ def motionRule() {
 def switchEvent(evt) {
 	trace("switchEvent($evt.value)")
 
-	if((triggerType == triggerTypes()[1]) && inMode() && evt.isStateChange) {
-        if(switchRule()) {
-            debug("Evaluating $switches")
-            debug("Switch needs to be ${translate(switchState)}")
-            debug("Switch is currently $evt.value")
+	if(evt.isStateChange && inMode() && (triggerType == triggerTypes()[1])) {
+        debug("Evaluating $switches")
+        def ruleEval = switchRule()
+        if(ruleEval) {
             debug("Running $lights")
-
-            doLight()
+            goForward()
+			unschedule(goBackward)
         }
         else
-            if(switchToggle) {
+            if(!ruleEval && switchToggle) {
 				debug("Toggling after $switchTimeout minutes")
-                runIn(switchTimeout*60, doLight, [overwrite: true, data: [toggle: true]])
+                runIn(switchTimeout*60, goBackward, [overwrite: true])
 			}
     }
 }
@@ -236,39 +234,52 @@ def switchRule() {
 
 /**/
 
-def doLight(data) {
-	trace("doLight(${data?.toggle})")
+def goForward() {
+	trace("goForward()")
     debug("Action type is $actionType")
 
 	lights.each {
-    	debug("$it.label is ${it.currentValue('switch')}")
+    	debug("$it.label is ${it.currentValue('switch').toUpperCase()}")
     	switch(actionType) {
-        	case triggerTypes()[1]:
-            	if(action == switchTriggers()[0]) {
+        	case actionTypes()[0]:
+            	if(action == switchActions()[0]) {
 					// Don't touch the light if it's already on.
                 	if(it.currentValue("switch") != "on") {
                     	debug("Turning ON $it.label")
                 		it.on()
                     }
-                    else if(data?.toggle) {
-                    	debug("Toggling OFF $it.label")                    
-                    	it.off()
-					}
 				}
-                else if(action == switchTriggers()[1]) {
+                else if(action == switchActions()[1]) {
                 	// Don't touch the light if it's already off.
                 	if(it.currentValue("switch") != "off") {
                     	debug("Turning OFF $it.label")
                 		it.off()
                     }
-                    else if (data?.toggle) {
-                    	debug("Toggling ON $it.label")                    
-                    	it.on()
-                    }
 				}
             	break;
         }
     }
+}
+
+def goBackward() {
+	trace("goForward()")
+    debug("Action type is $actionType")
+
+	lights.each {
+    	debug("$it.label is ${it.currentValue('switch').toUpperCase()}")
+    	switch(actionType) {
+        	case actionTypes()[0]:
+                if(action == switchActions()[0]) {
+                    debug("Toggling OFF $it.label")                    
+                    it.off()
+                }
+                else if(action == switchActions()[1]) {
+                    debug("Toggling ON $it.label")                    
+                    it.on()
+                }
+			break;
+		}
+	}
 }
 
 /**/
