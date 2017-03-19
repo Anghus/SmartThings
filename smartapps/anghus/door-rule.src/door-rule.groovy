@@ -8,6 +8,7 @@
  *	Version History
  *
  *  0.1		08 Dec 2016		Initial version
+ *  0.2		17 Mar 2017		Beefed up motion rules
  *
  *  Licensed under the Apache License, Version 2.0 (the "License"); you may not use this file except
  *  in compliance with the License. You may obtain a copy of the License at:
@@ -58,7 +59,10 @@ def doorPage() {
         if(doorLock) {
             section("MOTION") {
                 input name: "motionSensors", type: "capability.motionSensor", title: "Motion sensors", multiple: true, submitOnChange: true, required: false
-                paragraph "If you specify one or more motion sensors, the door lock only engages after the sensors are inactive for the specified delay."
+                if(motionSensors) {
+            		input name: "motionTimeout", type: "number", title: "Effective time (seconds)", defaultValue: 30, required: true
+				}
+                paragraph "If you specify one or more motion sensors, the door lock only engages after the sensors are inactive for the specified delay. After activity, sensors will continue to indicate activity for the duration that Effective Time specifies."
             }
         }
         section("MESSAGES") {
@@ -107,7 +111,10 @@ def knockPage() {
         if(knockSensor) {
             section("MOTION") {
                 input name: "outsideSensor", type: "capability.motionSensor", title: "Motion sensor", required: false
-                paragraph "If there was no recent activity on this motion sensor, the knock is probably a false alarm and is ignored."
+                if(outsideSensor) {
+            		input name: "outsideTimeout", type: "number", title: "Effective time (seconds)", defaultValue: 30, required: true
+				}
+                paragraph "If there was no recent activity on this motion sensor, the knock is probably a false alarm and is ignored. After activity, sensors will continue to indicate activity for the duration that Effective Time specifies."
             }
             section("MESSAGES") {
                 input name: "notifyKnock", type: "bool", title: "Notify on knock?", defaultValue: false, required: true
@@ -199,10 +206,6 @@ def updated() {
 def initialize() {
 	trace("initialize()")
 
-    state.lastLock = 0
-	state.lastContact = 0
-    state.lastMotion = 0
-    state.lastKnocker = 0
 	state.lockScheduled = false
     state.lightsScheduled = false
     state.whenUnlocked = 0
@@ -240,7 +243,6 @@ def lockEvent(evt)	{
             turnOnLights()
 
         evaluateLock()
-        state.lastLock = now()
     }
 }
 
@@ -249,7 +251,6 @@ def motionEvent(evt) {
 
 	if(evt.isStateChange) {
         evaluateLock()
-        state.lastMotion = now()
     }
 }
 
@@ -265,7 +266,6 @@ def contactEvent(evt) {
             turnOnLights()
 
         evaluateLock()
-        state.lastContact = now()
     }
 }
 
@@ -307,9 +307,21 @@ def evaluateLock() {
     def doorClosed = (contactSensor == null) ? true : contactSensor.currentValue("contact") == "closed"
 	def motionActive = false
     motionSensors.each {
-        motionActive |= it.currentValue("motion") == "active"
-        //debug("Motion ${it.currentValue("motion") == "active" ? "is" : "is not"} detected on $it.label")
-    }
+		def events = it.eventsSince(new Date(now() - motionTimeout * 1000))
+		motionActive = events?.findAll {it.value == "active"}.size() > 0
+        debug("Motion ${motionActive ? "is" : "is not"} detected on $it.label")
+
+		if(motionActive && it.currentValue("motion") == "inactive") {
+
+			// Handle the scenario where motion stopped but there is recent motion.
+            // If motion just stopped, we want to have another look in a bit to see
+            // if it's time to lock the door.
+
+			runIn(motionTimeout + 1, evaluateLock, [overwrite: true])
+            debug("$it.label was recently active but just changed states.")
+            debug("Evaluating $it.label again after $motionTimeout seconds.")
+		}
+	}
 
 	debug("${getApp().label} is ${doorLocked ? "locked" : "unlocked"}, ${doorClosed ? "closed" : "open"}, and ${motionActive ? "active" : "inactive"}")
 
@@ -364,7 +376,6 @@ def outsideEvent(evt) {
 	if(evt.isStateChange) {
         if(!limitLightEvents || (limitLightEvents && "motion" in lightEvents))
             turnOnLights()
-        state.lastKnocker = now()
     }
 }
 
@@ -373,12 +384,16 @@ def evaluateKnock() {
 
 	def defaultMsg = "Someone is knocking at the ${getApp().label.toLowerCase()}."
 
-	// Check whether sensor events are more recent than 60 seconds ago.
+	// Check recent contact, lock, and sensor events.
 
-	def nowMinus60 = now() - 60000
-	def recentContact = (contactSensor == null) ? false : state.lastContact > nowMinus60
-	def recentLock    = (doorLock == null) ? false : state.lastLock > nowMinus60
-    def recentMotion  = (outsideSensor == null) ? true : state.lastKnocker > nowMinus60
+	def events = contactSensor?.eventsSince(new Date(now() - 5000))
+	def recentContact = events?.findAll {it.value == "closed"}.size() > 0 || events?.findAll {it.value == "open"}.size() > 0
+
+	events = doorLock?.eventsSince(new Date(now() - 5000))
+	def recentLock = events?.findAll {it.value == "locked"}.size() > 0 || events?.findAll {it.value == "unlocked"}.size() > 0
+
+	events = outsideSensor?.eventsSince(new Date(now() - outsideTimeout * 1000))
+	def recentMotion = events?.findAll {it.value == "active"}.size() > 0
 
 	if(!recentContact && !recentLock && recentMotion) {
 
@@ -438,7 +453,7 @@ def turnOnLights() {
 			}
         }
         else
-        	debug("$location.mode} is not in $lightModes")
+        	debug("$location.mode is not in $lightModes")
     }
 }
 

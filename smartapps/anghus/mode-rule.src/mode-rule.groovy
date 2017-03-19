@@ -8,6 +8,7 @@
  *	Version History
  *
  *  0.1		08 Dec 2016		Initial version
+ *  0.2		17 Mar 2017		Beefed up motion rules
  *
  *  Licensed under the Apache License, Version 2.0 (the "License"); you may not use this file except
  *  in compliance with the License. You may obtain a copy of the License at:
@@ -117,6 +118,8 @@ def motionPage() {
                 input name: "motionScope", type: "enum", title: "Scope", options: ["Any", "All"], defaultValue: "Any", required: true
                 input name: "motionComparison", type: "enum", title: "Comparison", options: ["Are", "Are not"], defaultValue: "Are", required: true
                 input name: "motionValue", type: "enum", title: "Motion", options: ["Active", "Inactive"], defaultValue: "Active", required: true
+            	input name: "motionTimeout", type: "number", title: "Effective time (seconds)", defaultValue: 30, required: true
+                paragraph "After activity, sensors will continue to indicate activity for the duration that Effective Time specifies."
             }
             section("DELAY") {
 				input name: "motionDelay", type: "number", title: "Delay (minutes)", defaultValue: 0, required: true
@@ -334,7 +337,7 @@ def evaluateSchedule() {
 def presenceEvent(evt) {
 	trace("presenceEvent($evt.value})")
 
-	if(evt.isStateChange && evaluateSchedule()) {
+	if(evt.isStateChange && evaluateSchedule() && isNotChanged()) {
 
 		// Don't bother if we're not in the rule's schedule.
 
@@ -343,8 +346,7 @@ def presenceEvent(evt) {
 			runIn(presenceDelay * 60, handlePresence, [overwrite: true])
             state.presenceScheduled = true
 		}
-        else
-        {
+        else {
         	if(presenceScheduled) {
                 debug("Presence evaluation unscheduled")
                 unschedule(handlePresence)
@@ -395,22 +397,28 @@ def evaluatePresence() {
 def motionEvent(evt) {
 	trace("motionEvent($evt.value})")
 
-	if(evt.isStateChange && evaluateSchedule()) {
+	if(evt.isStateChange && evaluateSchedule() && isNotChanged()) {
 
 		// Don't bother if we're not in the rule's schedule.
 
-    	if(evaluateMotion()) {
-            debug("Motion evaluation runs in $motionDelay minutes")
-			runIn(motionDelay * 60, handleMotion, [overwrite: true])
-            state.motionScheduled = true
+		if(evaluateMotion()) {
+			if(!state.motionScheduled) {
+				debug("Motion evaluation runs in $motionDelay minutes")
+				runIn(motionDelay * 60, handleMotion, [overwrite: true])
+				state.motionScheduled = true
+			}
 		}
-        else
-        {
-        	if(state.motionScheduled) {
-                debug("Motion evaluation unscheduled")
-                unschedule(handleMotion)
-                state.motionScheduled = false
-            }
+		else {
+
+				// Don't let a brief moment of inactivity disrupt activity detection
+                // by completely unscheduling the evaluation. It's OK to interrupt
+                // inactivity detection by unscheduling the evaluation after activity.
+
+			if(state.motionScheduled && motionValue.toLowerCase() == "inactive") {
+				debug("Motion evaluation unscheduled")
+				unschedule(handleMotion)
+				state.motionScheduled = false
+			}
 		}
     }
 }
@@ -418,7 +426,7 @@ def motionEvent(evt) {
 def handleMotion() {
 	trace("handleMotion()")
 	state.motionScheduled = false
-    evaluateRule()
+	evaluateRule()
 }
 
 def evaluateMotion() {
@@ -431,11 +439,18 @@ def evaluateMotion() {
 
         motionSensors.each {
 
+			def events = it.eventsSince(new Date(now() - motionTimeout * 1000))
+			def motionEvents = events?.findAll {it.value == "active"}.size() > 0
+			def recentMotion = motionEvents ? "active" : "inactive"
+
+			if(recentMotion == "active")
+				debug("$it.label has recent motion activity")
+
             // Any matching value will change $any to true.
 			// Any non-matching value will change $all to false.
 
-            any |= (it.currentValue("motion") == motionValue.toLowerCase())
-            all &= (it.currentValue("motion") == motionValue.toLowerCase())
+            any |= (recentMotion == motionValue.toLowerCase())
+            all &= (recentMotion == motionValue.toLowerCase())
         }
 
 		// Based on the defined rule, pick the results we need.
@@ -456,7 +471,7 @@ def evaluateMotion() {
 def switchEvent(evt) {
 	trace("switchEvent($evt.value})")
 
-	if(evt.isStateChange && evaluateSchedule()) {
+	if(evt.isStateChange && evaluateSchedule() && isNotChanged()) {
 
 		// Don't bother if we're not in the rule's schedule.
 
@@ -465,8 +480,7 @@ def switchEvent(evt) {
 			runIn(switchDelay * 60, handleSwitch, [overwrite: true])
             state.switchScheduled = true
 		}
-        else
-        {
+        else {
         	if(state.switchScheduled) {
                 debug("Switch evaluation unscheduled")
                 unschedule(handleSwitch)
@@ -552,7 +566,7 @@ def evaluateRule() {
 def changeMode() {
 	trace("changeMode()")
 
-    if(targetMode && targetMode != location.mode) {
+    if(isNotChanged()) {
         if(location.modes?.find{it.name == targetMode}) {
 
             // Our target mode is valid and not already set,
@@ -593,6 +607,12 @@ def execExtraActions() {
         if(heatingTemp)    { it.setHeatingSetpoint(heatingTemp);   debug("Heating temp is $heatingTemp") }
         if(coolingTemp)    { it.setCoolingSetpoint(coolingTemp);   debug("Cooling temp is $coolingTemp") }
     }
+}
+
+/**/
+
+def isNotChanged() {
+	return targetMode && targetMode != location.mode
 }
 
 /**/
