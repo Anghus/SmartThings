@@ -3,12 +3,13 @@
  *
  *  Copyright 2016 Jerry Honeycutt
  *
- *  Version 0.1   8 Dec 2016
+ *  Version 0.3   20 Mar 2017
  *
  *	Version History
  *
  *  0.1		08 Dec 2016		Initial version
  *  0.2		17 Mar 2017		Beefed up motion rules
+ *  0.3		20 Mar 2017		Made lights off less annoying
  *
  *  Licensed under the Apache License, Version 2.0 (the "License"); you may not use this file except
  *  in compliance with the License. You may obtain a copy of the License at:
@@ -110,7 +111,7 @@ def knockPage() {
         }
         if(knockSensor) {
             section("MOTION") {
-                input name: "outsideSensor", type: "capability.motionSensor", title: "Motion sensor", required: false
+                input name: "outsideSensor", type: "capability.motionSensor", title: "Motion sensor", submitOnChange: true, required: false
                 if(outsideSensor) {
             		input name: "outsideTimeout", type: "number", title: "Effective time (seconds)", defaultValue: 30, required: true
 				}
@@ -308,7 +309,7 @@ def evaluateLock() {
 	def motionActive = false
     motionSensors.each {
 		def events = it.eventsSince(new Date(now() - motionTimeout * 1000))
-		motionActive = events?.findAll {it.value == "active"}.size() > 0
+		motionActive |= events?.findAll {it.value == "active"}.size() > 0
         debug("Motion ${motionActive ? "is" : "is not"} detected on $it.label")
 
 		if(motionActive && it.currentValue("motion") == "inactive") {
@@ -335,8 +336,8 @@ def evaluateLock() {
     }
     else {
 
-		// Otherwise, if the door lock was previously schedule, remove it from the queue.
-        // This woudl only occur if the door was manually locked, closed, or motion stopped.
+		// Otherwise, if the door lock was previously scheduled, remove it from the queue.
+        // This would only occur if the door was manually locked, closed, or motion stopped.
 
 		if(state.lockScheduled) {
             unschedule(lockDoor)
@@ -386,10 +387,10 @@ def evaluateKnock() {
 
 	// Check recent contact, lock, and sensor events.
 
-	def events = contactSensor?.eventsSince(new Date(now() - 5000))
+	def events = contactSensor?.eventsSince(new Date(now() - knockDelay * 1000))
 	def recentContact = events?.findAll {it.value == "closed"}.size() > 0 || events?.findAll {it.value == "open"}.size() > 0
 
-	events = doorLock?.eventsSince(new Date(now() - 5000))
+	events = doorLock?.eventsSince(new Date(now() - knockDelay * 1000))
 	def recentLock = events?.findAll {it.value == "locked"}.size() > 0 || events?.findAll {it.value == "unlocked"}.size() > 0
 
 	events = outsideSensor?.eventsSince(new Date(now() - outsideTimeout * 1000))
@@ -460,8 +461,32 @@ def turnOnLights() {
 def turnOffLight(data) {
 	trace("turnOffLight($data.id)")
 
-	def light = lights.find{ it.id == data.id }; light.off()
-    debug("Turning off $light.label after $lightTimeout minutes")
+	// Check the area around the door for activity.
+
+	def motionActive = false
+    motionSensors.each {
+		def events = it.eventsSince(new Date(now() - lightTimeout*60000))
+		motionActive |= events?.findAll {it.value == "active"}.size() > 0
+        debug("Motion ${motionActive ? "is" : "is not"} detected on $it.label")
+	}
+
+	if(!motionActive) {
+
+		// There is no recent motion near the door, so turn off the light.
+
+		def light = lights.find{ it.id == data.id }; light.off()
+    	debug("Turning off $light.label after $lightTimeout minutes")
+    }
+    else {
+
+		// There was recent motion near the door, so let's have another look
+        // in a bit. This has the effect of a rolling window of time defined
+        // by lightTimeout for which motion must be inactive.
+
+			runIn(motionTimeout + 1, turnOffLight,[overwrite: false, data: [id: data.id]])
+            debug("${getApp().label} was recently active but just changed states.")
+            debug("Evaluating ${getApp().label} again after $motionTimeout seconds.")
+    }
 }
 
 /**/
