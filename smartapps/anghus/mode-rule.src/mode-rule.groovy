@@ -246,6 +246,10 @@ def initialize() {
 	if(presenceSensors) subscribe(presenceSensors, "presence", presenceEvent)
 	if(motionSensors) subscribe(motionSensors, "motion", motionEvent)
 	if(switches) subscribe(switches, "switch", switchEvent)
+    
+    state.motionScheduled = false
+    state.presenceScheduled = false
+    state.switchScheduled = false
 }
 
 def setupSchedule() {
@@ -397,29 +401,33 @@ def evaluatePresence() {
 def motionEvent(evt) {
 	trace("motionEvent($evt.value})")
 
-	if(evt.isStateChange && evaluateSchedule() && isNotChanged()) {
+    // Don't bother if we're not in the rule's schedule.
 
-		// Don't bother if we're not in the rule's schedule.
+	if(evt.isStateChange && evaluateSchedule() && isNotChanged())
+		scheduleMotion()
+}
 
-		if(evaluateMotion()) {
-			if(!state.motionScheduled) {
-				debug("Motion evaluation runs in $motionDelay minutes")
-				runIn(motionDelay * 60, handleMotion, [overwrite: true])
-				state.motionScheduled = true
-			}
-		}
-		else {
+def scheduleMotion() {
+	trace("scheduleMotion()")
 
-				// Don't let a brief moment of inactivity disrupt activity detection
-                // by completely unscheduling the evaluation. It's OK to interrupt
-                // inactivity detection by unscheduling the evaluation after activity.
+    if(evaluateMotion()) {
+        if(!state.motionScheduled) {
+            debug("Motion evaluation runs in $motionDelay minutes")
+            runIn(motionDelay * 60, handleMotion, [overwrite: true])
+            state.motionScheduled = true
+        }
+    }
+    else {
 
-			if(state.motionScheduled && motionValue.toLowerCase() == "inactive") {
-				debug("Motion evaluation unscheduled")
-				unschedule(handleMotion)
-				state.motionScheduled = false
-			}
-		}
+        // Don't let a brief moment of inactivity disrupt activity detection
+        // by completely unscheduling the evaluation. It's OK to interrupt
+        // inactivity detection by unscheduling the evaluation after activity.
+
+        if(state.motionScheduled && motionValue.toLowerCase() == "inactive") {
+            debug("Motion evaluation unscheduled")
+            unschedule(handleMotion)
+            state.motionScheduled = false
+        }
     }
 }
 
@@ -443,8 +451,15 @@ def evaluateMotion() {
 			def motionEvents = events?.findAll {it.value == "active"}.size() > 0
 			def recentMotion = motionEvents ? "active" : "inactive"
 
-			if(recentMotion == "active")
-				debug("$it.label has recent motion activity")
+			if(motionEvents && it.currentValue("motion") == "inactive") {
+
+				// Handle the scenario where motion stopped but there is recent motion.
+				// If motion just stopped, we want to have a look in a bit to check again.
+
+                runIn(motionTimeout + 1, scheduleMotion, [overwrite: true])
+				debug("$it.label was recently active but just changed states.")
+				debug("Evaluating $it.label again after $motionTimeout seconds.")
+			}
 
             // Any matching value will change $any to true.
 			// Any non-matching value will change $all to false.
@@ -627,11 +642,11 @@ private notify(enabled, useCustom, customText, defaultText) {
 }
 
 private debug(message) {
-	if(debug)
+	if(true)
     	log.debug(message)
 }
 
 private trace(function) {
-	if(debug)
+	if(true)
     	log.trace(function)
 }
