@@ -81,6 +81,10 @@ def schedulePage() {
                     break;
             }
         }
+        section("DELAY") {
+            input name: "scheduleDelay", type: "number", title: "Delay (minutes)", defaultValue: 0, required: true
+            paragraph "Evaluate rule after the specified time, canceling the rule if conditions change."
+        }
     	section() {
 			paragraph "This rule will be evaluated only between the start and finish times. Both are required."
 		}
@@ -279,12 +283,14 @@ def setupSchedule() {
 
 def startCallback()  {
 	trace("startCallback()")
-    evaluateRule()
+    debug("Evaluation runs in $scheduleDelay minutes")
+    runIn(scheduleDelay * 60, evaluateRule, [overwrite: true])
 }
 
 def finishCallback() {
 	trace("finishCallback()")
-    evaluateRule()
+    debug("Evaluation runs in $scheduleDelay minutes")
+    runIn(scheduleDelay * 60, evaluateRule, [overwrite: true])
 }
 
 def astroCheck() {
