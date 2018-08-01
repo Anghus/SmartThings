@@ -9,6 +9,7 @@
  *
  *  0.1		08 Dec 2016		Initial version
  *  0.2		17 Mar 2017		Beefed up motion rules
+ *  0.3		31 Jul 2018		Added delay to astro events
  *
  *  Licensed under the Apache License, Version 2.0 (the "License"); you may not use this file except
  *  in compliance with the License. You may obtain a copy of the License at:
